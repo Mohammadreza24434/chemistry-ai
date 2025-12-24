@@ -10,20 +10,16 @@ LICENSE_PREFIX = "CHEM"
 SALT = "chem_master_secret_2025"
 
 def create_license():
-    """Generates a 30-day license code based on the current date hash."""
     expiry = (datetime.now() + timedelta(days=30)).strftime("%Y%m%d")
     raw = SALT + expiry
     h = hashlib.md5(raw.encode()).hexdigest().upper()[:12]
     return f"{LICENSE_PREFIX}-{h[:4]}-{h[4:8]}-{h[8:]}"
 
 def check_license(code):
-    """Verifies if the code matches any valid license for the next 30 days."""
     if not code or not code.startswith(f"{LICENSE_PREFIX}-"):
         return False
-    
     clean = code[len(LICENSE_PREFIX)+1:].replace("-", "").upper()
     today = datetime.now().date()
-    
     for d in range(0, 31):
         check_date = today + timedelta(days=d)
         expected = hashlib.md5((SALT + check_date.strftime("%Y%m%d")).encode()).hexdigest().upper()[:12]
@@ -138,10 +134,15 @@ if prompt := st.chat_input("سوال یا مسئله شیمی خود را این
         placeholder.info("در حال پردازش...")
 
         try:
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash-latest",
-                system_instruction=SYSTEM_PROMPT
-            )
+            # تست مدل‌های مختلف تا پیدا کنیم کدام در دسترسه
+            model_name = "gemini-1.5-flash"  # مدل پیش‌فرض
+            try:
+                model = genai.GenerativeModel(model_name=model_name, system_instruction=SYSTEM_PROMPT)
+            except Exception as e:
+                placeholder.error(f"مدل {model_name} پیدا نشد: {str(e)}")
+                model_name = "gemini-1.5-pro"  # مدل جایگزین
+                model = genai.GenerativeModel(model_name=model_name, system_instruction=SYSTEM_PROMPT)
+
             response = model.generate_content(prompt)
             
             if response and response.text:
@@ -154,4 +155,4 @@ if prompt := st.chat_input("سوال یا مسئله شیمی خود را این
             placeholder.error(f"خطا: {str(e)}")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("ChemiMaster AI v4.1 | 2025")
+st.sidebar.caption("ChemiMaster AI v4.2 | 2025")
