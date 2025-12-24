@@ -35,9 +35,8 @@ def check_license(code):
 API_KEY = "" # The environment will provide the API key
 MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
 
-# Configure once globally to improve speed
-if API_KEY or True: # True because environment injects key
-    genai.configure(api_key=API_KEY)
+# Configure once globally
+genai.configure(api_key=API_KEY)
 
 SYSTEM_PROMPT = """
 You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
@@ -125,20 +124,34 @@ for msg in st.session_state.messages:
 
 # User Input Handling
 if prompt := st.chat_input("سوال شیمی خود را اینجا بپرسید..."):
+    # Add user message to state
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Generate Assistant response
     with st.chat_message("assistant"):
-        with st.spinner("در حال پردازش تخصصی..."):
-            model = get_model() # Using cached model for speed
-            try:
-                response = model.generate_content(prompt)
-                full_text = response.text
-                st.markdown(full_text)
-                st.session_state.messages.append({"role": "assistant", "content": full_text})
-            except Exception as e:
-                st.error("خطا در برقراری ارتباط با هوش مصنوعی. لطفاً لحظاتی دیگر تلاش کنید.")
+        message_placeholder = st.empty()
+        full_response = ""
+        
+        try:
+            model = get_model()
+            # Start generating content
+            response = model.generate_content(prompt, stream=True)
+            
+            for chunk in response:
+                if chunk.text:
+                    full_response += chunk.text
+                    # Updating UI in real-time
+                    message_placeholder.markdown(full_response + "▌")
+            
+            # Final clean up of the message
+            message_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            
+        except Exception as e:
+            error_msg = "خطا در برقراری ارتباط با هوش مصنوعی. لطفاً از اتصال اینترنت یا اعتبار لایسنس اطمینان حاصل کنید."
+            st.error(f"{error_msg} (جزئیات: {str(e)})")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("ChemiMaster AI v2.5 | 2025")
