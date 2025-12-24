@@ -10,16 +10,20 @@ LICENSE_PREFIX = "CHEM"
 SALT = "chem_master_secret_2025"
 
 def create_license():
+    """Generates a 30-day license code based on the current date hash."""
     expiry = (datetime.now() + timedelta(days=30)).strftime("%Y%m%d")
     raw = SALT + expiry
     h = hashlib.md5(raw.encode()).hexdigest().upper()[:12]
     return f"{LICENSE_PREFIX}-{h[:4]}-{h[4:8]}-{h[8:]}"
 
 def check_license(code):
+    """Verifies if the code matches any valid license for the next 30 days."""
     if not code or not code.startswith(f"{LICENSE_PREFIX}-"):
         return False
+    
     clean = code[len(LICENSE_PREFIX)+1:].replace("-", "").upper()
     today = datetime.now().date()
+    
     for d in range(0, 31):
         check_date = today + timedelta(days=d)
         expected = hashlib.md5((SALT + check_date.strftime("%Y%m%d")).encode()).hexdigest().upper()[:12]
@@ -27,21 +31,17 @@ def check_license(code):
             return True
     return False
 
-# ==================== SECRETS & GEMINI SETUP ====================
-# این خط خیلی مهم است — کلید را از secrets می‌خواند
+# ==================== GEMINI API KEY ====================
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except KeyError:
-    GEMINI_API_KEY = None
+    st.error("GEMINI_API_KEY در بخش Secrets پیدا نشد. لطفاً کلید را وارد کنید.")
+    st.stop()
 
-if GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        st.error(f"مشکل در تنظیم کلید API: {str(e)}")
-        st.stop()
-else:
-    st.error("کلید API Gemini پیدا نشد. لطفاً در بخش Secrets اپ، GEMINI_API_KEY را وارد کنید.")
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+except Exception as e:
+    st.error(f"مشکل در تنظیم کلید API: {str(e)}")
     st.stop()
 
 # ==================== UI SETUP & STYLING ====================
@@ -121,7 +121,6 @@ If the question is not related to chemistry or chemical engineering, reply only 
 and nothing else.
 """
 
-# Display Chat History
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -129,7 +128,6 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# User Input
 if prompt := st.chat_input("سوال یا مسئله شیمی خود را اینجا بنویسید..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -137,24 +135,23 @@ if prompt := st.chat_input("سوال یا مسئله شیمی خود را این
 
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        placeholder.info("در حال پردازش ...")
+        placeholder.info("در حال پردازش...")
 
         try:
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash-latest",  # نسخه جدیدتر و پایدارتر
+                model_name="gemini-1.5-flash-latest",
                 system_instruction=SYSTEM_PROMPT
             )
-            response = model.generate_content(prompt, stream=False)
-
+            response = model.generate_content(prompt)
+            
             if response and response.text:
                 placeholder.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
             else:
-                placeholder.error("پاسخ دریافت نشد — لطفاً دوباره امتحان کنید.")
-
+                placeholder.error("پاسخ دریافت نشد")
+                
         except Exception as e:
-            placeholder.error(f"خطا در ارتباط با Gemini: {str(e)}")
-            st.exception(e)  # traceback کامل برای دیباگ
+            placeholder.error(f"خطا: {str(e)}")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("ChemiMaster AI v4.1 | 2025")
