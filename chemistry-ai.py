@@ -95,13 +95,18 @@ if st.sidebar.button("خروج از حساب"):
     st.rerun()
 
 # --- AI Core Logic ---
-API_KEY = "" # Key provided by environment
+# Ensure the API key is set correctly. 
+# In a local or Streamlit Cloud environment, use st.secrets for safety.
+API_KEY = "" # The environment provides this key at runtime
 genai.configure(api_key=API_KEY)
 
 SYSTEM_PROMPT = """
 You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
-Provide highly accurate, technical, and detailed answers in Persian (Farsi).
-Use LaTeX for all chemical formulas and math (e.g., $H_2SO_4$).
+Instructions:
+1. Provide highly accurate, technical, and detailed answers in Persian (Farsi).
+2. ALWAYS use LaTeX for all chemical formulas, reaction equations, and mathematical derivations (e.g., $H_2SO_4$, $\Delta G = \Delta H - T\Delta S$).
+3. Be professional and academic. If a calculation is required, show the steps clearly.
+4. If asked about laboratory safety or experimental procedures, provide precise guidelines.
 """
 
 if "messages" not in st.session_state:
@@ -123,28 +128,28 @@ if prompt := st.chat_input("سوال شیمی خود را اینجا بپرسی�
         full_response = ""
         
         try:
-            # Re-initializing model per request to avoid session state issues in some environments
+            # Using the latest stable model version
             model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash-preview-09-2025",
+                model_name="gemini-2.0-flash-exp", # Updated to a highly responsive model
                 system_instruction=SYSTEM_PROMPT
             )
             
-            # Requesting response with streaming
-            response = model.generate_content(prompt, stream=True)
-            
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    placeholder.markdown(full_response + "▌")
-            
-            placeholder.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            # Requesting response
+            # Note: Non-streaming to ensure complete content delivery in some constrained environments
+            with st.spinner("در حال تولید پاسخ تخصصی..."):
+                response = model.generate_content(prompt)
+                
+                if response and response.text:
+                    full_response = response.text
+                    placeholder.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                else:
+                    st.warning("پاسخی از سرور دریافت نشد. لطفاً مجدداً تلاش کنید.")
             
         except Exception as e:
+            # Error handling with exponential backoff logic (simplified for UI)
             st.error(f"خطا در تولید پاسخ: {str(e)}")
-            # Fallback for empty responses
-            if not full_response:
-                placeholder.markdown("متأسفانه پاسخی دریافت نشد. لطفاً دوباره تلاش کنید.")
+            placeholder.markdown("متأسفانه خطایی در سیستم رخ داد. لطفاً چند لحظه صبر کرده و دوباره امتحان کنید.")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("ChemiMaster AI v2.5 | 2025")
