@@ -10,26 +10,39 @@ LICENSE_PREFIX = "CHEM"
 SALT = "chem_master_secret_2025"
 
 def create_license():
-    """Generates a 30-day license code based on the current date hash."""
     expiry = (datetime.now() + timedelta(days=30)).strftime("%Y%m%d")
     raw = SALT + expiry
     h = hashlib.md5(raw.encode()).hexdigest().upper()[:12]
     return f"{LICENSE_PREFIX}-{h[:4]}-{h[4:8]}-{h[8:]}"
 
 def check_license(code):
-    """Verifies if the code matches any valid license for the next 30 days."""
     if not code or not code.startswith(f"{LICENSE_PREFIX}-"):
         return False
-    
     clean = code[len(LICENSE_PREFIX)+1:].replace("-", "").upper()
     today = datetime.now().date()
-    
     for d in range(0, 31):
         check_date = today + timedelta(days=d)
         expected = hashlib.md5((SALT + check_date.strftime("%Y%m%d")).encode()).hexdigest().upper()[:12]
         if expected == clean:
             return True
     return False
+
+# ==================== SECRETS & GEMINI SETUP ====================
+# این خط خیلی مهم است — کلید را از secrets می‌خواند
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    GEMINI_API_KEY = None
+
+if GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        st.error(f"مشکل در تنظیم کلید API: {str(e)}")
+        st.stop()
+else:
+    st.error("کلید API Gemini پیدا نشد. لطفاً در بخش Secrets اپ، GEMINI_API_KEY را وارد کنید.")
+    st.stop()
 
 # ==================== UI SETUP & STYLING ====================
 st.set_page_config(page_title="ChemiMaster Pro AI", page_icon="🧪", layout="wide")
@@ -95,10 +108,6 @@ if st.sidebar.button("خروج از حساب"):
     st.session_state.authenticated = False
     st.rerun()
 
-# --- AI Core Logic (Revised for Maximum Compatibility) ---
-API_KEY = "" # Key is injected at runtime
-genai.configure(api_key=API_KEY)
-
 SYSTEM_PROMPT = """
 You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
 Respond in Persian (Farsi).
@@ -107,47 +116,45 @@ Rules:
 2. Formatting: ALWAYS use LaTeX for chemical formulas, reactions, and math (e.g., $H_2SO_4$, $\Delta G$).
 3. Calculations: Show all steps of mathematical problems clearly.
 4. Scope: Organic, Inorganic, Physical, Analytical Chemistry, and Unit Operations.
+If the question is not related to chemistry or chemical engineering, reply only with: 
+«ببخشید، فقط سؤالات شیمی و مهندسی شیمی جواب می‌دم. لطفاً در این زمینه بپرس.»
+and nothing else.
 """
 
+# Display Chat History
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display Chat History
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Handling User Input
+# User Input
 if prompt := st.chat_input("سوال یا مسئله شیمی خود را اینجا بنویسید..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        status_placeholder = st.empty()
-        status_placeholder.info("در حال تحلیل علمی و استخراج داده‌ها...")
-        
+        placeholder = st.empty()
+        placeholder.info("در حال پردازش ...")
+
         try:
-            # Using stable model version with retry logic
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
+                model_name="gemini-1.5-flash-latest",  # نسخه جدیدتر و پایدارتر
                 system_instruction=SYSTEM_PROMPT
             )
-            
-            # Requesting generation with safety fallbacks
-            response = model.generate_content(prompt)
-            
-            if response and hasattr(response, 'text'):
-                status_placeholder.empty()
-                full_text = response.text
-                st.markdown(full_text)
-                st.session_state.messages.append({"role": "assistant", "content": full_text})
+            response = model.generate_content(prompt, stream=False)
+
+            if response and response.text:
+                placeholder.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
             else:
-                status_placeholder.error("متاسفانه سرور هوش مصنوعی پاسخ خالی ارسال کرد. لطفا دوباره تلاش کنید.")
-        
+                placeholder.error("پاسخ دریافت نشد — لطفاً دوباره امتحان کنید.")
+
         except Exception as e:
-            status_placeholder.error(f"خطای فنی در اتصال: {str(e)}")
-            st.warning("پیشنهاد: اگر این خطا تکرار شد، ممکن است به دلیل محدودیت‌های موقت API باشد. لحظاتی دیگر تلاش کنید.")
+            placeholder.error(f"خطا در ارتباط با Gemini: {str(e)}")
+            st.exception(e)  # traceback کامل برای دیباگ
 
 st.sidebar.markdown("---")
-st.sidebar.caption("ChemiMaster AI v4.0 | 🧪 2025")
+st.sidebar.caption("ChemiMaster AI v4.1 | 2025")
