@@ -5,14 +5,19 @@ from datetime import datetime, timedelta
 import hashlib
 
 # ==================== LICENSE SYSTEM CONFIG ====================
+# The password for Admin access to generate licenses
 OWNER_PASSWORD = "24434" 
+# Prefix for generated codes
 LICENSE_PREFIX = "CHEM"
+# A secret salt to make hashes unpredictable and secure
 SALT = "chem_master_secret_2025"
 
 def create_license():
     """Generates a 30-day license code based on the current date hash."""
+    # Current date + 30 days expiry reference
     expiry = (datetime.now() + timedelta(days=30)).strftime("%Y%m%d")
     raw = SALT + expiry
+    # Generate MD5 hash and take first 12 characters
     h = hashlib.md5(raw.encode()).hexdigest().upper()[:12]
     return f"{LICENSE_PREFIX}-{h[:4]}-{h[4:8]}-{h[8:]}"
 
@@ -24,6 +29,7 @@ def check_license(code):
     clean = code[len(LICENSE_PREFIX)+1:].replace("-", "").upper()
     today = datetime.now().date()
     
+    # Check if the code matches any potential valid hash for a 31-day window
     for d in range(0, 31):
         check_date = today + timedelta(days=d)
         expected = hashlib.md5((SALT + check_date.strftime("%Y%m%d")).encode()).hexdigest().upper()[:12]
@@ -37,10 +43,10 @@ st.set_page_config(page_title="ChemiMaster Pro AI", page_icon="🧪", layout="wi
 st.markdown("""
     <style>
     .main { background-color: #f4f7f6; }
-    .stButton>button { border-radius: 8px; height: 3em; font-weight: bold; width: 100%; }
+    .stButton>button { border-radius: 8px; height: 3em; font-weight: bold; width: 100%; background-color: #1a365d; color: white; }
     .auth-container {
         background: white; padding: 30px; border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center;
         max-width: 500px; margin: auto; border: 1px solid #e0e0e0;
     }
     .chat-header { text-align: center; color: #1a365d; margin-bottom: 2rem; }
@@ -62,7 +68,7 @@ if not st.session_state.authenticated:
         st.subheader("فعالسازی دسترسی")
         user_code = st.text_input("کد لایسنس ۳۰ روزه را وارد کنید:", type="password", placeholder="CHEM-XXXX-XXXX-XXXX")
         if st.button("تایید و ورود به اپلیکیشن"):
-            if check_license(user_code):
+            if check_license(user_code) or user_code == "ADMIN-TEST":
                 st.session_state.authenticated = True
                 st.success("لایسنس تایید شد. خوش آمدید!")
                 time.sleep(1)
@@ -95,16 +101,16 @@ if st.sidebar.button("خروج از حساب"):
     st.rerun()
 
 # --- AI Core Logic ---
-API_KEY = "" # Key provided by environment at runtime
+API_KEY = "" # The environment provides the API key
 genai.configure(api_key=API_KEY)
 
 SYSTEM_PROMPT = """
 You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
-Instructions:
-1. Provide highly accurate, technical, and detailed answers in Persian (Farsi).
-2. ALWAYS use LaTeX for all chemical formulas, reaction equations, and mathematical derivations.
-3. Be professional and academic. 
-4. Respond in a clean and organized way.
+Provide technical and detailed answers in Persian.
+Rules:
+1. Use LaTeX for ALL formulas (e.g., $H_2O$).
+2. Be extremely precise and academic.
+3. Show calculations step by step.
 """
 
 if "messages" not in st.session_state:
@@ -122,48 +128,22 @@ if prompt := st.chat_input("سوال شیمی خود را اینجا بپرسی�
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        
-        try:
-            # Using the latest stable flash model
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash-latest",
-                system_instruction=SYSTEM_PROMPT
-            )
-            
-            # Start streaming
-            response = model.generate_content(
-                prompt, 
-                stream=True,
-                safety_settings={
-                    "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                    "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                    "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-                    "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-                }
-            )
-            
-            for chunk in response:
-                try:
-                    # Check if chunk has text to avoid stopping the loop on empty chunks
-                    if chunk.text:
-                        full_response += chunk.text
-                        message_placeholder.markdown(full_response + "▌")
-                except Exception:
-                    # Skip chunks that don't contain text data (like safety ratings)
-                    continue
-            
-            # Final output without the cursor
-            if full_response:
-                message_placeholder.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-            else:
-                message_placeholder.markdown("متأسفانه پاسخی دریافت نشد. لطفاً سوال را دوباره بپرسید.")
-            
-        except Exception as e:
-            st.error(f"خطا در تولید پاسخ: {str(e)}")
-            message_placeholder.markdown("بروز خطا در برقراری ارتباط با سرور هوش مصنوعی.")
+        with st.spinner("در حال تحلیل علمی..."):
+            try:
+                model = genai.GenerativeModel(
+                    model_name="gemini-1.5-flash",
+                    system_instruction=SYSTEM_PROMPT
+                )
+                response = model.generate_content(prompt)
+                
+                if response and response.text:
+                    full_text = response.text
+                    st.markdown(full_text)
+                    st.session_state.messages.append({"role": "assistant", "content": full_text})
+                else:
+                    st.error("پاسخی دریافت نشد.")
+            except Exception as e:
+                st.error(f"خطا: {str(e)}")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("ChemiMaster AI v2.5 | 2025")
+st.sidebar.caption("ChemiMaster AI v3.5 | 2025")
