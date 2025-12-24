@@ -31,26 +31,6 @@ def check_license(code):
             return True
     return False
 
-# ==================== AI CONFIGURATION (OPTIMIZED) ====================
-API_KEY = "" # The environment will provide the API key
-MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
-
-# Configure once globally
-genai.configure(api_key=API_KEY)
-
-SYSTEM_PROMPT = """
-You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
-Provide highly accurate, technical, and detailed answers.
-- Use LaTeX for all chemical formulas and math (e.g., $H_2SO_4$, $PV=nRT$).
-- Respond in Persian (Farsi).
-- Covered fields: Organic, Inorganic, Analytical, Physical Chemistry, and Chemical Engineering (Unit Operations, Thermodynamics, Reactor Design).
-"""
-
-# Initialize model once to save overhead time
-@st.cache_resource
-def get_model():
-    return genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=SYSTEM_PROMPT)
-
 # ==================== UI SETUP & STYLING ====================
 st.set_page_config(page_title="ChemiMaster Pro AI", page_icon="🧪", layout="wide")
 
@@ -114,44 +94,57 @@ if st.sidebar.button("خروج از حساب"):
     st.session_state.authenticated = False
     st.rerun()
 
+# --- AI Core Logic ---
+API_KEY = "" # Key provided by environment
+genai.configure(api_key=API_KEY)
+
+SYSTEM_PROMPT = """
+You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
+Provide highly accurate, technical, and detailed answers in Persian (Farsi).
+Use LaTeX for all chemical formulas and math (e.g., $H_2SO_4$).
+"""
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display Message History
+# Display History
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# User Input Handling
+# Handling Input
 if prompt := st.chat_input("سوال شیمی خود را اینجا بپرسید..."):
-    # Add user message to state
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Generate Assistant response
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
+        placeholder = st.empty()
         full_response = ""
         
         try:
-            model = get_model()
-            # Start generating content
+            # Re-initializing model per request to avoid session state issues in some environments
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash-preview-09-2025",
+                system_instruction=SYSTEM_PROMPT
+            )
+            
+            # Requesting response with streaming
             response = model.generate_content(prompt, stream=True)
             
             for chunk in response:
                 if chunk.text:
                     full_response += chunk.text
-                    # Updating UI in real-time
-                    message_placeholder.markdown(full_response + "▌")
+                    placeholder.markdown(full_response + "▌")
             
-            # Final clean up of the message
-            message_placeholder.markdown(full_response)
+            placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             
         except Exception as e:
-            error_msg = "خطا در برقراری ارتباط با هوش مصنوعی. لطفاً از اتصال اینترنت یا اعتبار لایسنس اطمینان حاصل کنید."
-            st.error(f"{error_msg} (جزئیات: {str(e)})")
+            st.error(f"خطا در تولید پاسخ: {str(e)}")
+            # Fallback for empty responses
+            if not full_response:
+                placeholder.markdown("متأسفانه پاسخی دریافت نشد. لطفاً دوباره تلاش کنید.")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("ChemiMaster AI v2.5 | 2025")
