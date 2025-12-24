@@ -1,11 +1,11 @@
 import streamlit as st
-import google.generativeai as genai
+from openai import OpenAI  # نیاز به نصب: pip install openai
 import time
 from datetime import datetime, timedelta
 import hashlib
 
 # ==================== LICENSE SYSTEM CONFIG ====================
-OWNER_PASSWORD = "24434" 
+OWNER_PASSWORD = "24434"
 LICENSE_PREFIX = "CHEM"
 SALT = "chem_master_secret_2025"
 
@@ -27,22 +27,21 @@ def check_license(code):
             return True
     return False
 
-# ==================== GEMINI API KEY ====================
+# ==================== DEEPSEEK API KEY ====================
 try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
 except KeyError:
-    st.error("GEMINI_API_KEY در بخش Secrets پیدا نشد. لطفاً کلید را وارد کنید.")
+    st.error("DEEPSEEK_API_KEY در بخش Secrets پیدا نشد. لطفاً کلید API DeepSeek را وارد کنید.")
     st.stop()
 
-try:
-    genai.configure(api_key=GEMINI_API_KEY)
-except Exception as e:
-    st.error(f"مشکل در تنظیم کلید API: {str(e)}")
-    st.stop()
+# ایجاد کلاینت سازگار با OpenAI برای DeepSeek
+client = OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com"
+)
 
 # ==================== UI SETUP & STYLING ====================
 st.set_page_config(page_title="ChemiMaster Pro AI", page_icon="🧪", layout="wide")
-
 st.markdown("""
     <style>
     .main { background-color: #f4f7f6; }
@@ -64,9 +63,9 @@ if 'authenticated' not in st.session_state:
 # ==================== LOGIN & ADMIN INTERFACE ====================
 if not st.session_state.authenticated:
     st.markdown("<h1 class='chat-header'>🧪 دستیار هوشمند شیمی و مهندسی شیمی</h1>", unsafe_allow_html=True)
-    
+   
     tab1, tab2 = st.tabs(["🔑 ورود کاربران", "⚙️ پنل مدیریت"])
-    
+   
     with tab1:
         st.markdown('<div class="auth-container">', unsafe_allow_html=True)
         st.subheader("فعالسازی دسترسی")
@@ -80,7 +79,7 @@ if not st.session_state.authenticated:
             else:
                 st.error("کد لایسنس نامعتبر یا منقضی شده است.")
         st.markdown('</div>', unsafe_allow_html=True)
-
+        
     with tab2:
         st.markdown('<div class="auth-container">', unsafe_allow_html=True)
         st.subheader("بخش مدیریت ادمین")
@@ -99,7 +98,7 @@ if not st.session_state.authenticated:
 # ==================== MAIN CHAT INTERFACE ====================
 st.title("🧪 ChemiMaster Pro AI")
 st.sidebar.success("وضعیت لایسنس: فعال ✅")
-
+st.sidebar.markdown("**مدل هوش مصنوعی:** DeepSeek")
 if st.sidebar.button("خروج از حساب"):
     st.session_state.authenticated = False
     st.rerun()
@@ -112,7 +111,7 @@ Rules:
 2. Formatting: ALWAYS use LaTeX for chemical formulas, reactions, and math (e.g., $H_2SO_4$, $\Delta G$).
 3. Calculations: Show all steps of mathematical problems clearly.
 4. Scope: Organic, Inorganic, Physical, Analytical Chemistry, and Unit Operations.
-If the question is not related to chemistry or chemical engineering, reply only with: 
+If the question is not related to chemistry or chemical engineering, reply only with:
 «ببخشید، فقط سؤالات شیمی و مهندسی شیمی جواب می‌دم. لطفاً در این زمینه بپرس.»
 and nothing else.
 """
@@ -120,39 +119,49 @@ and nothing else.
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# نمایش تاریخچه چت
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
+# ورودی کاربر
 if prompt := st.chat_input("سوال یا مسئله شیمی خود را اینجا بنویسید..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-
+    
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        placeholder.info("در حال پردازش...")
+        placeholder.info("در حال پردازش با DeepSeek...")
 
         try:
-            # تست مدل‌های مختلف تا پیدا کنیم کدام در دسترسه
-            model_name = "gemini-1.5-flash"  # مدل پیش‌فرض
-            try:
-                model = genai.GenerativeModel(model_name=model_name, system_instruction=SYSTEM_PROMPT)
-            except Exception as e:
-                placeholder.error(f"مدل {model_name} پیدا نشد: {str(e)}")
-                model_name = "gemini-1.5-pro"  # مدل جایگزین
-                model = genai.GenerativeModel(model_name=model_name, system_instruction=SYSTEM_PROMPT)
+            # ساخت لیست پیام‌ها برای API (با system prompt در ابتدا)
+            api_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            for msg in st.session_state.messages:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
 
-            response = model.generate_content(prompt)
-            
-            if response and response.text:
-                placeholder.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            # استفاده از مدل deepseek-chat (سریع و قدرتمند)
+            # اگر نیاز به استدلال پیچیده‌تر داشتید، به "deepseek-reasoner" تغییر دهید
+            response = client.chat.completions.create(
+                model="deepseek-chat",          # یا "deepseek-reasoner" برای دقت بالاتر
+                messages=api_messages,
+                temperature=0.7,
+                max_tokens=4096,
+                stream=False
+            )
+
+            full_response = response.choices[0].message.content.strip()
+
+            if full_response:
+                placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
             else:
-                placeholder.error("پاسخ دریافت نشد")
-                
-        except Exception as e:
-            placeholder.error(f"خطا: {str(e)}")
+                placeholder.error("پاسخ خالی دریافت شد.")
 
+        except Exception as e:
+            placeholder.error(f"خطا در ارتباط با DeepSeek: {str(e)}")
+            st.error("لطفاً اتصال اینترنت و صحت کلید API را بررسی کنید.")
+
+# فوتر
 st.sidebar.markdown("---")
-st.sidebar.caption("ChemiMaster AI v4.2 | 2025")
+st.sidebar.caption("ChemiMaster AI v4.3 | 2025 - Powered by DeepSeek 🧪")
