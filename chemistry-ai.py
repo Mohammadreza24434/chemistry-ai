@@ -104,7 +104,7 @@ Instructions:
 1. Provide highly accurate, technical, and detailed answers in Persian (Farsi).
 2. ALWAYS use LaTeX for all chemical formulas, reaction equations, and mathematical derivations.
 3. Be professional and academic. 
-4. If a response is blocked or impossible, explain why briefly in Persian.
+4. Respond in a clean and organized way.
 """
 
 if "messages" not in st.session_state:
@@ -126,37 +126,44 @@ if prompt := st.chat_input("سوال شیمی خود را اینجا بپرسی�
         full_response = ""
         
         try:
-            # Using 1.5-flash for maximum stability and speed
+            # Using the latest stable flash model
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
+                model_name="gemini-1.5-flash-latest",
                 system_instruction=SYSTEM_PROMPT
             )
             
-            # Streaming results for immediate feedback
-            with st.spinner("در حال تحلیل علمی..."):
-                response = model.generate_content(
-                    prompt, 
-                    stream=True,
-                    safety_settings={
-                        "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                        "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                        "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-                        "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-                    }
-                )
-                
-                for chunk in response:
+            # Start streaming
+            response = model.generate_content(
+                prompt, 
+                stream=True,
+                safety_settings={
+                    "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+                    "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+                    "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+                }
+            )
+            
+            for chunk in response:
+                try:
+                    # Check if chunk has text to avoid stopping the loop on empty chunks
                     if chunk.text:
                         full_response += chunk.text
                         message_placeholder.markdown(full_response + "▌")
-                
+                except Exception:
+                    # Skip chunks that don't contain text data (like safety ratings)
+                    continue
+            
+            # Final output without the cursor
+            if full_response:
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
+            else:
+                message_placeholder.markdown("متأسفانه پاسخی دریافت نشد. لطفاً سوال را دوباره بپرسید.")
             
         except Exception as e:
-            st.error(f"خطا در ارتباط: {str(e)}")
-            if not full_response:
-                message_placeholder.markdown("متأسفانه پاسخی تولید نشد. ممکن است محدودیت منطقه‌ای یا فنی وجود داشته باشد.")
+            st.error(f"خطا در تولید پاسخ: {str(e)}")
+            message_placeholder.markdown("بروز خطا در برقراری ارتباط با سرور هوش مصنوعی.")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("ChemiMaster AI v2.5 | 2025")
