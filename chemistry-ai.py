@@ -5,19 +5,14 @@ from datetime import datetime, timedelta
 import hashlib
 
 # ==================== LICENSE SYSTEM CONFIG ====================
-# The password for Admin access to generate licenses
 OWNER_PASSWORD = "24434" 
-# Prefix for generated codes
 LICENSE_PREFIX = "CHEM"
-# A secret salt to make hashes unpredictable and secure
 SALT = "chem_master_secret_2025"
 
 def create_license():
     """Generates a 30-day license code based on the current date hash."""
-    # Current date + 30 days
     expiry = (datetime.now() + timedelta(days=30)).strftime("%Y%m%d")
     raw = SALT + expiry
-    # Generate MD5 hash and take first 12 characters
     h = hashlib.md5(raw.encode()).hexdigest().upper()[:12]
     return f"{LICENSE_PREFIX}-{h[:4]}-{h[4:8]}-{h[8:]}"
 
@@ -29,13 +24,33 @@ def check_license(code):
     clean = code[len(LICENSE_PREFIX)+1:].replace("-", "").upper()
     today = datetime.now().date()
     
-    # Check if the code matches any potential valid hash for a 31-day window
     for d in range(0, 31):
         check_date = today + timedelta(days=d)
         expected = hashlib.md5((SALT + check_date.strftime("%Y%m%d")).encode()).hexdigest().upper()[:12]
         if expected == clean:
             return True
     return False
+
+# ==================== AI CONFIGURATION (OPTIMIZED) ====================
+API_KEY = "" # The environment will provide the API key
+MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
+
+# Configure once globally to improve speed
+if API_KEY or True: # True because environment injects key
+    genai.configure(api_key=API_KEY)
+
+SYSTEM_PROMPT = """
+You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
+Provide highly accurate, technical, and detailed answers.
+- Use LaTeX for all chemical formulas and math (e.g., $H_2SO_4$, $PV=nRT$).
+- Respond in Persian (Farsi).
+- Covered fields: Organic, Inorganic, Analytical, Physical Chemistry, and Chemical Engineering (Unit Operations, Thermodynamics, Reactor Design).
+"""
+
+# Initialize model once to save overhead time
+@st.cache_resource
+def get_model():
+    return genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=SYSTEM_PROMPT)
 
 # ==================== UI SETUP & STYLING ====================
 st.set_page_config(page_title="ChemiMaster Pro AI", page_icon="🧪", layout="wide")
@@ -100,18 +115,6 @@ if st.sidebar.button("خروج از حساب"):
     st.session_state.authenticated = False
     st.rerun()
 
-# AI Configuration
-API_KEY = "" # The environment will provide the API key
-MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
-
-SYSTEM_PROMPT = """
-You are "ChemiMaster AI", a world-class expert in Chemistry and Chemical Engineering.
-Provide highly accurate, technical, and detailed answers.
-- Use LaTeX for all chemical formulas and math (e.g., $H_2SO_4$, $PV=nRT$).
-- Respond in Persian (Farsi).
-- Covered fields: Organic, Inorganic, Analytical, Physical Chemistry, and Chemical Engineering (Unit Operations, Thermodynamics, Reactor Design).
-"""
-
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -128,8 +131,7 @@ if prompt := st.chat_input("سوال شیمی خود را اینجا بپرسی�
 
     with st.chat_message("assistant"):
         with st.spinner("در حال پردازش تخصصی..."):
-            genai.configure(api_key=API_KEY)
-            model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=SYSTEM_PROMPT)
+            model = get_model() # Using cached model for speed
             try:
                 response = model.generate_content(prompt)
                 full_text = response.text
